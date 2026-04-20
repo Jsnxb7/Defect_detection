@@ -68,6 +68,75 @@ _cam_lock   = threading.Lock()
 _models     = {}
 _model_lock = threading.Lock()
 
+class CropHeatmapGenerator:
+
+    def __init__(self, img_bgr):
+        self.img = img_bgr
+        self.gray = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
+
+    # ─────────────────────────────
+    # Option 5: Texture Variance
+    # ─────────────────────────────
+    def texture_heatmap(self):
+        window = 15
+
+        mean = cv2.blur(self.gray.astype(np.float32), (window, window))
+        sqr_mean = cv2.blur(self.gray.astype(np.float32)**2, (window, window))
+        var = np.maximum(sqr_mean - mean**2, 0)
+        std = np.sqrt(var)
+
+        std = cv2.normalize(std, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
+        heatmap = cv2.applyColorMap(std, cv2.COLORMAP_PLASMA)
+
+        return heatmap
+
+    # ─────────────────────────────
+    # Option 6: Multi-scale
+    # ─────────────────────────────
+    def multisacle_heatmap(self):
+        edges1 = cv2.Canny(cv2.GaussianBlur(self.gray, (3, 3), 0), 50, 150)
+        edges2 = cv2.Canny(cv2.GaussianBlur(self.gray, (9, 9), 0), 30, 100)
+
+        gx = cv2.Sobel(self.gray, cv2.CV_64F, 1, 0)
+        gy = cv2.Sobel(self.gray, cv2.CV_64F, 0, 1)
+        mag = np.sqrt(gx**2 + gy**2)
+        mag = cv2.normalize(mag, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
+
+        combined = (
+            edges1 * 0.3 +
+            edges2 * 0.2 +
+            mag * 0.5
+        )
+
+        combined = cv2.normalize(combined, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
+        heatmap = cv2.applyColorMap(combined, cv2.COLORMAP_INFERNO)
+
+        return heatmap
+    
+def save_heatmaps(crop_img, crop_fname_base):
+    """
+    Generates + saves heatmaps for a crop
+    returns saved file paths
+    """
+
+    gen = CropHeatmapGenerator(crop_img)
+
+    texture = gen.texture_heatmap()
+    multi   = gen.multisacle_heatmap()
+
+    texture_name = f"{crop_fname_base}_texture.jpg"
+    multi_name   = f"{crop_fname_base}_multi.jpg"
+
+    texture_path = os.path.join(CROP_DIR, texture_name)
+    multi_path   = os.path.join(CROP_DIR, multi_name)
+
+    cv2.imwrite(texture_path, texture)
+    cv2.imwrite(multi_path, multi)
+
+    return {
+        "texture_heatmap": f"/crops/{texture_name}",
+        "multi_heatmap": f"/crops/{multi_name}"
+    }
 
 def get_models():
     global _models
@@ -178,9 +247,16 @@ def run_inference(frame_bgr, cam_id=0):
         crop = frame_bgr[y1p:y2p, x1p:x2p]
 
         # Save crop
-        crop_fname = f"{uuid.uuid4().hex}_crop.jpg"
+# Save crop
+        crop_id = uuid.uuid4().hex
+        crop_fname = f"{crop_id}_crop.jpg"
         crop_path  = os.path.join(CROP_DIR, crop_fname)
         cv2.imwrite(crop_path, crop)
+
+        # ─────────────────────────────
+        # NEW: Generate heatmaps
+        # ─────────────────────────────
+        heatmap_paths = save_heatmaps(crop, crop_id)
 
         tracker["count"] += 1
         tracker["last_capture_time"] = current_time
@@ -202,6 +278,10 @@ def run_inference(frame_bgr, cam_id=0):
             "processed": False,
 
             "crop_url": f"/crops/{crop_fname}",
+            "heatmaps": {
+                "texture": heatmap_paths["texture_heatmap"],
+                "multi_scale": heatmap_paths["multi_heatmap"]
+            },
             "frame_url": f"/uploads/{frame_fname}",
         }
 
@@ -450,31 +530,38 @@ def serve_crop(fname):
 def serve_upload(fname):
     return send_from_directory(UPLOAD_DIR, fname)
 
-
 def _delete_detection_files(detection_list):
-    deleted_frames = set()
     for d in detection_list:
+
+        # ── DELETE FRAME ─────────────────────────────
         frame_url = d.get("frame_url")
-        if frame_url and frame_url not in deleted_frames:
-            rel        = frame_url.lstrip("/").replace("/", os.sep)
-            frame_path = os.path.join(BASE_DIR, rel)
+        if frame_url:
             try:
+                frame_path = os.path.join(BASE_DIR, frame_url.lstrip("/"))
                 if os.path.exists(frame_path):
                     os.remove(frame_path)
             except Exception as e:
                 print(f"Frame delete error: {e}")
-            deleted_frames.add(frame_url)
 
+        # ── DELETE CROP ──────────────────────────────
         crop_url = d.get("crop_url")
         if crop_url:
-            rel       = crop_url.lstrip("/").replace("/", os.sep)
-            crop_path = os.path.join(BASE_DIR, rel)
             try:
+                crop_path = os.path.join(BASE_DIR, crop_url.lstrip("/"))
                 if os.path.exists(crop_path):
                     os.remove(crop_path)
             except Exception as e:
                 print(f"Crop delete error: {e}")
 
+        # ── DELETE HEATMAPS (IMPORTANT FIX) ─────────
+        heatmaps = d.get("heatmaps", {})
+        for url in heatmaps.values():
+            try:
+                heatmap_path = os.path.join(BASE_DIR, url.lstrip("/"))
+                if os.path.exists(heatmap_path):
+                    os.remove(heatmap_path)
+            except Exception as e:
+                print(f"Heatmap delete error: {e}")
 
 @app.route("/api/decision", methods=["POST"])
 def handle_decision():
@@ -528,6 +615,23 @@ def reject_all():
 
     _delete_detection_files(pending)
     return jsonify({"status": "success", "removed": len(pending)})
+
+@app.route("/api/detection/heatmaps/<det_id>")
+def get_heatmaps(det_id):
+
+    with json_lock:
+        with open(JSON_PATH, "r") as f:
+            detections = json.load(f)
+
+    det = next((d for d in detections if d["id"] == det_id), None)
+
+    if not det:
+        return jsonify({"error": "not found"}), 404
+
+    return jsonify({
+        "id": det_id,
+        "heatmaps": det.get("heatmaps", {})
+    })
 
 # def inject_test_detection():
 #     test_crop = "t1.jpeg"   # ← put your image in /crops folder

@@ -748,17 +748,6 @@ detections = detections[:50]  # Keep only 50 latest
 - **Output**: "perfect" / "defective" / "unknown" with confidence
 
 ---
-
-## 🤝 Contributing
-
-Contributions are welcome! Please follow these steps:
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
-
 ### Development Setup
 
 ```bash
@@ -771,49 +760,3 @@ pytest tests/
 # Code formatting
 black app.py
 ```
-
----
-
-## 📄 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
----
-
-## 🙏 Acknowledgments
-
-- **YOLOv8** by Ultralytics for object detection framework
-- **Hugging Face** for model hosting
-- **Flask** for web framework
-- **OpenCV** for computer vision operations
-
----
-
-## 📞 Support
-
-For issues, questions, or suggestions:
-
-- **Email**: shouryagarg2012@gmail.com
-
----
-
-## 🗺️ Roadmap
-
-- [ ] Multi-object tracking across frames
-- [ ] Export detection reports (PDF/CSV)
-- [ ] Email/SMS alerts for defects
-- [ ] Training pipeline for custom models
-- [ ] Docker containerization
-- [ ] Cloud deployment guide
-- [ ] Mobile app for remote monitoring
-- [ ] Integration with industrial PLCs
-
----
-
-<div align="center">
-
-**Made with ❤️ for quality control automation**
-
-⭐ Star this repo if you find it useful!
-
-</div>

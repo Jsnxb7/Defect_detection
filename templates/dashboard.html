@@ -68,6 +68,14 @@
           <div id="detailFilled" style="display:none;">
             <div class="detail-meta" id="metaTable"></div>
             <div class="detail-images" id="detailImages"></div>
+            <!-- HEATMAPS -->
+            <div class="section-title">HEATMAP ANALYSIS</div>
+
+            <div class="heatmap-grid" id="heatmapGrid">
+              <div class="heatmap-placeholder">
+                NO HEATMAP AVAILABLE
+              </div>
+            </div>
             <div class="actions">
               <button class="btn-accept" onclick="handleDecision('accept')">✔ ACCEPT</button>
               <button class="btn-reject" onclick="handleDecision('reject')">✖ REJECT</button>
@@ -311,6 +319,7 @@ if (d.result === "defective") {
           <span class="img-box-label">${img.label}</span>
         </div>
       `).join("");
+      loadHeatmaps(d.id);
     }
 
     function clearDetail() {
@@ -346,6 +355,41 @@ if (d.result === "defective") {
       })
       .catch(console.error);
     }
+
+    function loadHeatmaps(id) {
+  fetch(`/api/detection/heatmaps/${id}`)
+    .then(res => res.json())
+    .then(data => {
+      const container = document.getElementById("heatmapGrid");
+
+      if (!data.heatmaps || Object.keys(data.heatmaps).length === 0) {
+        container.innerHTML = `
+          <div class="heatmap-placeholder">NO HEATMAP GENERATED</div>
+        `;
+        return;
+      }
+
+      container.innerHTML = Object.entries(data.heatmaps).map(([key, url]) => {
+        return `
+          <div class="heatmap-thumb" onclick="openHeatmap('${url}')">
+            <img src="${url}" />
+            <div class="heatmap-label">${key.replace("_", " ")}</div>
+          </div>
+        `;
+      }).join("");
+    })
+    .catch(err => {
+      console.error(err);
+    });
+}
+function openHeatmap(url) {
+  const div = document.createElement("div");
+  div.className = "heatmap-popup";
+  div.onclick = () => div.remove();
+
+  div.innerHTML = `<img src="${url}" />`;
+  document.body.appendChild(div);
+}
   </script>
 
 </body>
